@@ -174,29 +174,7 @@ Time-series data requires respecting temporal order. The last 20% of dates form 
 | Calendar | `day_of_week`, `month`, `is_weekend` | Capture seasonality |
 | Business | `promotion`, `holiday` | External demand drivers |
 
-### Why LightGBM (Not Deep Learning)?
-Tree-based models outperform neural networks on tabular time-series data, are faster to train, and provide interpretable feature importances. This is the industry standard for demand forecasting at companies like Walmart and Amazon.
 
----
-
-## Interview Questions This Project Answers
-
-**Q: What is time-series forecasting?**
-> Predicting future values based on historical observations, respecting temporal ordering.
-
-**Q: How did you prevent data leakage?**
-> I split the dataset chronologically before feature engineering. All features only look backward.
-
-**Q: What are lag features?**
-> Previous values (e.g., sales 7 days ago) used as predictors for future values.
-
-**Q: How do you know your model is actually better?**
-> I compared it against a naive baseline. LightGBM improved RMSE by 31%.
-
-**Q: Why not use deep learning?**
-> Tree models work well with tabular time-series data and are easier to interpret.
-
----
 
 ## Tech Stack
 
