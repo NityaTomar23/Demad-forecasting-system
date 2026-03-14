@@ -1,0 +1,21 @@
+{
+  "best_model": "LightGBM",
+  "results": {
+    "Baseline (lag-7)": {
+      "RMSE": 23.8,
+      "MAE": 18.46
+    },
+    "Linear Regression": {
+      "RMSE": 16.79,
+      "MAE": 13.0
+    },
+    "Random Forest": {
+      "RMSE": 16.84,
+      "MAE": 13.08
+    },
+    "LightGBM": {
+      "RMSE": 16.44,
+      "MAE": 12.82
+    }
+  }
+}
