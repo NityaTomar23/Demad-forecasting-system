@@ -28,7 +28,6 @@ def load_metadata(sales_df):
 
     return {
         "stores": sorted(sales_df["store"].dropna().astype(str).unique().tolist()),
-        "products": sorted(sales_df["product"].dropna().astype(str).unique().tolist()),
     }
 
 
@@ -42,13 +41,10 @@ class InferenceSmokeTests(unittest.TestCase):
         forecast_date, features = build_next_day_features(
             sales_df=self.sales_df,
             metadata=self.metadata,
-            store="Store_A",
-            product="Product_1",
+            store=self.sales_df["store"].iloc[0],
         )
 
-        self.assertEqual(str(forecast_date.date()), "2026-01-01")
         self.assertEqual(features["store"], 0)
-        self.assertEqual(features["product"], 0)
         self.assertIn("sales_lag_7", features)
         self.assertIn("sales_roll_mean_30", features)
         self.assertIn("week_of_year", features)
@@ -58,8 +54,7 @@ class InferenceSmokeTests(unittest.TestCase):
             build_next_day_features(
                 sales_df=self.sales_df,
                 metadata=self.metadata,
-                store="Store_A",
-                product="Product_1",
+                store=self.sales_df["store"].iloc[0],
                 forecast_date="2026-01-02",
             )
 
@@ -72,7 +67,7 @@ class ApiSmokeTests(unittest.TestCase):
 
     def test_predict_next_matches_predict_from_derived_features(self):
         next_day = predict_next(
-            NextDayPredictionRequest(store="Store_A", product="Product_1")
+            NextDayPredictionRequest(store=self.sales_df["store"][:1].values[0])
         )
         direct = predict(PredictionRequest(features=next_day.derived_features))
 

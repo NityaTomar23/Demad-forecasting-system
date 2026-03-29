@@ -41,7 +41,7 @@ def add_lag_features(
     df = df.copy()
     for lag in lags:
         df[f"{target}_lag_{lag}"] = (
-            df.groupby(["store", "product"])[target].shift(lag)
+            df.groupby(["store"])[target].shift(lag)
         )
     return df
 
@@ -73,7 +73,7 @@ def add_rolling_features(
 
     df = df.copy()
     for w in windows:
-        grp = df.groupby(["store", "product"])[target]
+        grp = df.groupby(["store"])[target]
         df[f"{target}_roll_mean_{w}"] = grp.transform(
             lambda s: s.shift(1).rolling(w, min_periods=1).mean()
         )
@@ -103,9 +103,9 @@ def add_date_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def encode_categoricals(df: pd.DataFrame) -> pd.DataFrame:
-    """Label-encode ``store`` and ``product`` so tree models can use them."""
+    """Label-encode categorical fields so tree models can use them."""
     df = df.copy()
-    for col in ["store", "product"]:
+    for col in ["store", "StoreType", "Assortment"]:
         if col in df.columns:
             df[col] = df[col].astype("category").cat.codes
     return df

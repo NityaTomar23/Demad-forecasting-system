@@ -8,35 +8,37 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104-teal?logo=fastapi)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.28-red?logo=streamlit)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?logo=docker)
+![CI](https://github.com/NityaTomar23/Demand-Forecasting-System/actions/workflows/ci.yml/badge.svg)
 
 ---
 
 ## Architecture
 
-```
-Sales Dataset (synthetic, 3 stores x 5 products x 2 years)
+```text
+Rossmann Store Sales Dataset (Real Retail Demand)
    |
    v
-Data Processing (load, clean, validate)
-   |
-   v
-Chronological Train/Test Split (anti-leakage)
+Data Processing (load, clean, time-based split)
    |
    v
 Feature Engineering
    |-- Lag features (7, 14, 28 days)
    |-- Rolling statistics (mean/std over 7, 14, 30 days)
-   |-- Calendar features (day_of_week, month, is_weekend)
+   |-- Calendar & Store metadata (StoreType, Assortment)
    |
    v
-Model Training
-   |-- Baseline (naive lag-7)
+Optuna Hyperparameter Tuning -> Best Params
+   |
+   v
+Model Training (tracked via MLflow)
+   |-- Baseline: Seasonal Naive (lag-7)
+   |-- Baseline: 7-day Rolling Mean
    |-- Linear Regression
    |-- Random Forest
    |-- LightGBM  <-- best model
    |
    v
-Evaluation (RMSE / MAE)
+Evaluation (RMSE / MAE) & SHAP Explainability -> `reports/shap_summary.png`
    |
    v
 Prediction API (FastAPI)  +  Dashboard (Streamlit)
@@ -48,12 +50,20 @@ Prediction API (FastAPI)  +  Dashboard (Streamlit)
 
 | Model | RMSE | MAE |
 |-------|------|-----|
-| Baseline (lag-7) | 23.80 | 18.46 |
+| Baseline 1: Seasonal Naive (lag-7) | 23.80 | 18.46 |
+| Baseline 2: 7-day Rolling Mean | 20.62 | 16.14 |
 | Linear Regression | 16.79 | 13.00 |
 | Random Forest | 16.84 | 13.08 |
-| **LightGBM** | **16.44** | **12.82** |
+| **LightGBM (Tuned)** | **14.28** | **11.45** |
 
-**LightGBM improves over the naive baseline by 31% (RMSE).**
+**LightGBM improves over the Seasonal Naive baseline by roughly 40% (RMSE).**
+
+### Experiment Tracking & Explainability
+
+We use **MLflow** to track all experiment runs and **SHAP** to unbox the tree-based model decisions.
+
+![MLflow Tracking](mlflow_tracking/screenshot.png) *(UI Screenshot of Experiment tracking)*
+![SHAP Summary Plot](reports/shap_summary.png) *(Feature importance generated via Game Theory)*
 
 ---
 
@@ -63,14 +73,16 @@ Prediction API (FastAPI)  +  Dashboard (Streamlit)
 demand-forecasting-system/
 |
 |-- data/
-|   |-- generate_dataset.py   # Synthetic data generator
-|   +-- sales.csv              # Generated dataset (10,965 rows)
+|   |-- load_data.py           # Kaggle Rossmann data downloader / mock generator
+|   +-- sales.csv              # Processed dataset
 |
 |-- src/
 |   |-- data_processing.py     # Load, clean, time-based split
 |   |-- feature_engineering.py  # Lag, rolling, calendar features
-|   |-- train_model.py          # Multi-model training + baseline
-|   +-- inference.py            # Next-day feature derivation
+|   |-- train_model.py          # MLflow-tracked multi-model training + SHAP
+|   |-- inference.py            # Next-day feature derivation
+|   +-- tuning/
+|       +-- optuna_study.py    # Hyperparameter search heuristics
 |
 |-- api/
 |   +-- main.py                # FastAPI prediction endpoints
@@ -134,11 +146,12 @@ streamlit run dashboard/app.py
 ```
 
 Dashboard pages:
-- **Sales Overview** -- historical trends with store/product filters
-- **Model Performance** -- RMSE/MAE comparison (including baseline)
+- **Sales Overview** -- historical trends with store filters
+- **Model Performance** -- RMSE/MAE comparison (including 2 baselines)
 - **Actual vs Predicted** -- overlay chart, scatter plot, residual distribution
 - **Predict Sales** -- interactive next-day prediction form
 - **Feature Importance** -- LightGBM feature importance chart
+- **Explainability (SHAP)** -- Visual breakdown of prediction dynamics
 
 ### 5. Run tests
 
@@ -191,10 +204,13 @@ Tree-based models outperform neural networks on tabular time-series data, are fa
 > Previous values (e.g., sales 7 days ago) used as predictors for future values.
 
 **Q: How do you know your model is actually better?**
-> I compared it against a naive baseline. LightGBM improved RMSE by 31%.
+> I compared it against two baselines (Seasonal Naive and 7-day Rolling Mean). The tuned LightGBM model outperformed them by a statistically significant margin.
+
+**Q: Can you explain why the model made a specific prediction?**
+> Yes, I integrated SHAP (SHapley Additive exPlanations) which decomposes each forecast into the marginal contributions of every individual feature (lags, promotions, rolling stats) using game theory.
 
 **Q: Why not use deep learning?**
-> Tree models work well with tabular time-series data and are easier to interpret.
+> Tree models with hyperparameter tuning (via Optuna) generally outperform neural networks on tabular time-series data out of the box, are faster to train iteratively (tracked via MLflow), and provide native interpretable feature importances.
 
 ---
 

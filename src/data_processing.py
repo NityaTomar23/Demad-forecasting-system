@@ -22,8 +22,8 @@ def load_data(path: str) -> pd.DataFrame:
     pd.DataFrame
         Sorted DataFrame with a parsed ``date`` column.
     """
-    df = pd.read_csv(path, parse_dates=["date"])
-    df.sort_values(["store", "product", "date"], inplace=True)
+    df = pd.read_csv(path, parse_dates=["date"], low_memory=False)
+    df.sort_values(["store", "date"], inplace=True)
     df.reset_index(drop=True, inplace=True)
     return df
 
@@ -43,7 +43,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     pd.DataFrame
         Cleaned copy of the input DataFrame.
     """
-    required_cols = {"date", "store", "product", "sales", "promotion", "holiday"}
+    required_cols = {"date", "store", "sales", "promotion", "holiday"}
     missing = required_cols - set(df.columns)
     if missing:
         raise ValueError(f"Missing columns: {missing}")
@@ -52,12 +52,12 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # Forward-fill sales within each group
     df["sales"] = (
-        df.groupby(["store", "product"])["sales"]
+        df.groupby(["store"])["sales"]
         .transform(lambda s: s.ffill().bfill())
     )
 
     df["promotion"] = df["promotion"].fillna(0).astype(int)
-    df["holiday"] = df["holiday"].fillna(0).astype(int)
+    df["holiday"] = df["holiday"].fillna(0).map(lambda x: 0 if str(x).strip() == "0" else 1).astype(int)
 
     # Ensure non-negative sales
     df["sales"] = df["sales"].clip(lower=0)
@@ -105,6 +105,5 @@ if __name__ == "__main__":
     csv_path = os.path.join(os.path.dirname(__file__), "..", "data", "sales.csv")
     df = load_data(csv_path)
     df = clean_data(df)
-    print(f"Loaded & cleaned: {len(df):,} rows, {df['store'].nunique()} stores, "
-          f"{df['product'].nunique()} products")
+    print(f"Loaded & cleaned: {len(df):,} rows, {df['store'].nunique()} stores")
     train, test = split_data(df)

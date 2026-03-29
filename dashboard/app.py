@@ -7,6 +7,7 @@ Provides:
 - Actual vs Predicted chart (Mistake #7 fix)
 - Interactive sales prediction form
 - Feature importance chart
+- Explainability (SHAP)
 """
 
 import os
@@ -29,6 +30,7 @@ FEATURES_PATH = os.path.join(BASE_DIR, "models", "feature_names.joblib")
 METRICS_PATH = os.path.join(BASE_DIR, "models", "metrics.json")
 METADATA_PATH = os.path.join(BASE_DIR, "models", "metadata.json")
 PREDICTIONS_PATH = os.path.join(BASE_DIR, "models", "predictions.csv")
+SHAP_PLOT_PATH = os.path.join(BASE_DIR, "reports", "shap_summary.png")
 CACHE_DIR = os.path.join(BASE_DIR, ".cache", "matplotlib")
 
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -92,7 +94,7 @@ st.sidebar.markdown("Predict future product sales using ML.")
 
 page = st.sidebar.radio(
     "Navigate",
-    ["Sales Overview", "Model Performance", "Actual vs Predicted", "Predict Sales", "Feature Importance"],
+    ["Sales Overview", "Model Performance", "Actual vs Predicted", "Predict Sales", "Feature Importance", "Explainability (SHAP)"],
 )
 
 # ── Load data ────────────────────────────────────────────────────────────────
@@ -120,21 +122,17 @@ if page == "Sales Overview":
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Records", f"{len(sales_df):,}")
     col2.metric("Stores", sales_df["store"].nunique())
-    col3.metric("Products", sales_df["product"].nunique())
-    col4.metric("Avg Daily Sales", f"{sales_df['sales'].mean():.0f} units")
+    col3.metric("Avg Daily Sales", f"{sales_df['sales'].mean():.0f} units")
 
     st.markdown("---")
 
     # Filters
     c1, c2 = st.columns(2)
     selected_store = c1.selectbox("Store", ["All"] + sorted(sales_df["store"].unique().tolist()))
-    selected_product = c2.selectbox("Product", ["All"] + sorted(sales_df["product"].unique().tolist()))
 
     filtered = sales_df.copy()
     if selected_store != "All":
         filtered = filtered[filtered["store"] == selected_store]
-    if selected_product != "All":
-        filtered = filtered[filtered["product"] == selected_product]
 
     # Aggregate daily sales
     daily = filtered.groupby("date")["sales"].sum().reset_index()
@@ -273,14 +271,12 @@ elif page == "Predict Sales":
     )
 
     store_options = metadata.get("stores", sorted(sales_df["store"].unique().tolist()))
-    product_options = metadata.get("products", sorted(sales_df["product"].unique().tolist()))
 
     select_col1, select_col2 = st.columns(2)
     selected_store = select_col1.selectbox("Store", store_options)
-    selected_product = select_col2.selectbox("Product", product_options)
 
     series_df = sales_df[
-        (sales_df["store"] == selected_store) & (sales_df["product"] == selected_product)
+        (sales_df["store"] == selected_store)
     ].sort_values("date")
     latest_date = series_df["date"].max()
     next_forecast_date = (latest_date + pd.Timedelta(days=1)).date()
@@ -306,7 +302,6 @@ elif page == "Predict Sales":
                 sales_df=sales_df,
                 metadata=metadata,
                 store=selected_store,
-                product=selected_product,
                 promotion=int(input_values["promotion"]),
                 holiday=int(input_values["holiday"]),
                 forecast_date=next_forecast_date,
@@ -323,7 +318,6 @@ elif page == "Predict Sales":
                     {
                         "forecast_date": forecast_timestamp.date().isoformat(),
                         "store": selected_store,
-                        "product": selected_product,
                         "features": derived_features,
                     }
                 )
@@ -379,3 +373,21 @@ elif page == "Feature Importance":
         columns=["Feature", "Description"],
     )
     st.table(desc_df)
+
+# ── Page: Explainability (SHAP) ─────────────────────────────────────────────
+
+elif page == "Explainability (SHAP)":
+    st.title("Model Explainability (SHAP)")
+    st.markdown("SHAP (SHapley Additive exPlanations) values show the impact of diverse features on the model's predictions.")
+    
+    if os.path.exists(SHAP_PLOT_PATH):
+        st.image(SHAP_PLOT_PATH, caption="SHAP Summary Plot")
+        
+        st.info(
+            "**How to read this plot:**\n"
+            "- **Y-axis:** Features ordered by their importance.\n"
+            "- **X-axis:** The SHAP value (impact on model output). Positive means higher sales predicted, negative means lower.\n"
+            "- **Color:** The actual value of the feature (red = high, blue = low)."
+        )
+    else:
+        st.warning("SHAP summary plot not found. Make sure you have trained a tree-based model via `train_model.py` recently.")

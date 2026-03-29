@@ -6,7 +6,7 @@ Endpoints
 GET  /             → Health check and artifact readiness
 GET  /model-info   → Model name, metrics, feature list, and metadata
 POST /predict      → Predict sales from engineered feature values
-POST /predict-next → Predict the next day for a store/product using history
+POST /predict-next → Predict the next day for a store using history
 """
 
 from __future__ import annotations
@@ -99,9 +99,8 @@ def _require_prediction_artifacts() -> dict:
 
 
 def _coerce_feature_value(feature_name: str, value, metadata: dict) -> float:
-    if feature_name in {"store", "product"} and isinstance(value, str):
-        lookup_key = "stores" if feature_name == "store" else "products"
-        values = metadata.get(lookup_key, [])
+    if feature_name == "store" and isinstance(value, str):
+        values = metadata.get("stores", [])
         if value not in values:
             raise HTTPException(
                 status_code=400,
@@ -135,8 +134,7 @@ class PredictionRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "features": {
-                    "store": "Store_A",
-                    "product": "Product_1",
+                    "store": "1",
                     "promotion": 1,
                     "holiday": 0,
                     "sales_lag_7": 50,
@@ -166,8 +164,7 @@ class PredictionResponse(BaseModel):
 
 
 class NextDayPredictionRequest(BaseModel):
-    store: str = Field(..., examples=["Store_A"])
-    product: str = Field(..., examples=["Product_1"])
+    store: str = Field(..., examples=["1"])
     promotion: int = Field(default=0, ge=0, le=1)
     holiday: int | None = Field(default=None, ge=0, le=1)
     forecast_date: date | None = None
@@ -176,7 +173,6 @@ class NextDayPredictionRequest(BaseModel):
 class NextDayPredictionResponse(BaseModel):
     forecast_date: date
     store: str
-    product: str
     predicted_sales: float
     model_used: str
     derived_features: dict[str, float | int]
@@ -207,7 +203,6 @@ def model_info():
         "results": artifacts["metrics"].get("results"),
         "features": artifacts["feature_names"],
         "stores": artifacts["metadata"].get("stores", []),
-        "products": artifacts["metadata"].get("products", []),
         "trained_on": {
             "date_min": artifacts["metadata"].get("date_min"),
             "date_max": artifacts["metadata"].get("date_max"),
@@ -264,7 +259,6 @@ def predict_next(request: NextDayPredictionRequest):
             sales_df=sales_df,
             metadata=artifacts["metadata"],
             store=request.store,
-            product=request.product,
             promotion=request.promotion,
             holiday=request.holiday,
             forecast_date=request.forecast_date,
@@ -279,7 +273,6 @@ def predict_next(request: NextDayPredictionRequest):
         return NextDayPredictionResponse(
             forecast_date=forecast_timestamp.date(),
             store=request.store,
-            product=request.product,
             predicted_sales=round(float(prediction), 2),
             model_used=artifacts["metrics"].get("best_model", "unknown"),
             derived_features=features,

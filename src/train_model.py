@@ -26,6 +26,9 @@ import sys
 import joblib
 import numpy as np
 import pandas as pd
+import mlflow
+import shap
+import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -65,24 +68,33 @@ def configure_runtime() -> None:
 
 
 def evaluate_baseline(test_df: pd.DataFrame) -> dict:
-    """Naive baseline: predict sales = yesterday's sales (sales_lag_7 as proxy).
-
-    If ``sales_lag_7`` is not available, we fall back to the mean of the
-    training set, which is still a valid (weak) baseline.
-    """
+    """Evaluate Seasonal Naive (lag-7) and 7-day Rolling Mean baselines."""
     y_true = test_df[TARGET].values
+    results = {}
 
     if "sales_lag_7" in test_df.columns:
         y_pred = test_df["sales_lag_7"].values
-        print("\nBaseline: predict next sales = sales 7 days ago (naive lag-7)")
+        print("\nBaseline 1: predict next sales = sales 7 days ago (Seasonal Naive)")
     else:
-        mean_val = y_true.mean()
-        y_pred = np.full_like(y_true, mean_val, dtype=float)
-        print("\nBaseline: predict next sales = historical mean")
+        y_pred = np.full_like(y_true, y_true.mean(), dtype=float)
+        print("\nBaseline 1: predict next sales = historical mean")
 
-    metrics = evaluate(y_true, y_pred)
-    print(f"  RMSE = {metrics['RMSE']:.2f}  |  MAE = {metrics['MAE']:.2f}")
-    return metrics
+    metrics1 = evaluate(y_true, y_pred)
+    print(f"  RMSE = {metrics1['RMSE']:.2f}  |  MAE = {metrics1['MAE']:.2f}")
+    results["Seasonal Naive (lag-7)"] = metrics1
+
+    if "sales_roll_mean_7" in test_df.columns:
+        y_pred2 = test_df["sales_roll_mean_7"].values
+        print("\nBaseline 2: predict next sales = 7-day rolling mean")
+    else:
+        y_pred2 = np.full_like(y_true, y_true.mean(), dtype=float)
+        print("\nBaseline 2: predict next sales = historical mean")
+
+    metrics2 = evaluate(y_true, y_pred2)
+    print(f"  RMSE = {metrics2['RMSE']:.2f}  |  MAE = {metrics2['MAE']:.2f}")
+    results["7-day Rolling Mean"] = metrics2
+
+    return results
 
 
 # ── Training ────────────────────────────────────────────────────────────────
@@ -149,25 +161,31 @@ def train_and_evaluate(
 
     # -- ML Models --
     models = get_models()
-    results = {"Baseline (lag-7)": baseline_metrics}
+    results = baseline_metrics.copy()
     best_rmse = float("inf")
     best_model = None
     best_name = None
     best_preds = None
 
+    mlflow.set_experiment("Demand Forecasting")
+
     for name, model in models.items():
         print(f"\nTraining {name} ...")
-        model.fit(X_train, y_train)
-        preds = model.predict(X_test)
-        metrics = evaluate(y_test, preds)
-        results[name] = metrics
-        print(f"  RMSE = {metrics['RMSE']:.2f}  |  MAE = {metrics['MAE']:.2f}")
+        with mlflow.start_run(run_name=name):
+            model.fit(X_train, y_train)
+            preds = model.predict(X_test)
+            metrics = evaluate(y_test, preds)
+            results[name] = metrics
+            print(f"  RMSE = {metrics['RMSE']:.2f}  |  MAE = {metrics['MAE']:.2f}")
 
-        if metrics["RMSE"] < best_rmse:
-            best_rmse = metrics["RMSE"]
-            best_model = model
-            best_name = name
-            best_preds = preds
+            mlflow.log_params(model.get_params())
+            mlflow.log_metrics(metrics)
+
+            if metrics["RMSE"] < best_rmse:
+                best_rmse = metrics["RMSE"]
+                best_model = model
+                best_name = name
+                best_preds = preds
 
     print(f"\n* Best model: {best_name} (RMSE={best_rmse:.2f})")
 
@@ -188,7 +206,6 @@ def build_metadata(df: pd.DataFrame) -> dict:
     """Build small reference metadata for inference and UI layers."""
     return {
         "stores": sorted(df["store"].dropna().astype(str).unique().tolist()),
-        "products": sorted(df["product"].dropna().astype(str).unique().tolist()),
         "date_min": str(df["date"].min().date()),
         "date_max": str(df["date"].max().date()),
         "row_count": int(len(df)),
@@ -222,6 +239,12 @@ def save_artifacts(
         json.dump(metadata, f, indent=2)
 
     predictions_df.to_csv(predictions_path, index=False)
+    
+    # MLflow log the best model and metrics
+    with mlflow.start_run(run_name="Best_Model_Artifacts"):
+        mlflow.log_artifact(model_path)
+        mlflow.log_artifact(features_path)
+        mlflow.log_artifact(metrics_path)
 
     print(f"\nModel saved       -> {model_path}")
     print(f"Features saved    -> {features_path}")
@@ -269,6 +292,29 @@ def main():
 
     # 6. Save
     save_artifacts(best_model, feature_cols, results, best_name, metadata, predictions_df)
+
+    # 6.5 Model Explainability (SHAP)
+    print("\nGenerating SHAP explanations...")
+    try:
+        explainer = shap.TreeExplainer(best_model)
+        X_shap = test_df[feature_cols].sample(n=min(1000, len(test_df)), random_state=42)
+        shap_values = explainer.shap_values(X_shap)
+        
+        plt.figure(figsize=(10, 6))
+        shap.summary_plot(shap_values, X_shap, show=False)
+        
+        os.makedirs(os.path.join(BASE_DIR, "reports"), exist_ok=True)
+        shap_path = os.path.join(BASE_DIR, "reports", "shap_summary.png")
+        plt.savefig(shap_path, bbox_inches='tight')
+        plt.close()
+        
+        # Log to MLflow
+        with mlflow.start_run(run_name="Best_Model_Artifacts"):
+            mlflow.log_artifact(shap_path)
+            
+        print(f"SHAP summary plot saved -> {shap_path}")
+    except Exception as e:
+        print(f"SHAP explanation failed (likely model not tree-based): {e}")
 
     # 7. Print summary table
     print("\n" + "=" * 60)

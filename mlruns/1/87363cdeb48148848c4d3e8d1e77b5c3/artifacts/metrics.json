@@ -1,0 +1,25 @@
+{
+  "best_model": "Random Forest",
+  "results": {
+    "Seasonal Naive (lag-7)": {
+      "RMSE": 3239.13,
+      "MAE": 2595.12
+    },
+    "7-day Rolling Mean": {
+      "RMSE": 2491.6,
+      "MAE": 2059.23
+    },
+    "Linear Regression": {
+      "RMSE": 2399.49,
+      "MAE": 2070.68
+    },
+    "Random Forest": {
+      "RMSE": 2371.72,
+      "MAE": 2069.21
+    },
+    "LightGBM": {
+      "RMSE": 2586.97,
+      "MAE": 2187.7
+    }
+  }
+}
