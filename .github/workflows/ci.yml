@@ -1,20 +1,17 @@
 name: CI
-
 on: [push, pull_request]
-
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      
       - name: Set up Python 3.11
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-          
       - name: Install dependencies
         run: pip install -r requirements.txt
-        
+      - name: Generate dataset
+        run: python data/generate_dataset.py
       - name: Run Tests
         run: python -B -m unittest discover -s tests
